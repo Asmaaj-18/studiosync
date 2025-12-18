@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  
+}
+
+model User {
+  id            String    @id @default(cuid())
+  email         String    @unique
+  password      String
+  role          String    @default("USER")
+  name          String?
+  bookings      Booking[]
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Studio {
+  id            String    @id @default(cuid())
+  name          String
+  description   String?
+  imageUrl      String?
+  pricePerHour  Float
+  maxCapacity   Int
+  openingHours  String
+  equipment     Equipment[]
+  bookings      Booking[]
+  isActive      Boolean   @default(true)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Equipment {
+  id            String    @id @default(cuid())
+  name          String
+  type          String
+  brand         String?
+  model         String?
+  isIncluded    Boolean   @default(true)
+  isAvailable   Boolean   @default(true)
+  status        String    @default("OK")
+  studioId      String
+  studio        Studio    @relation(fields: [studioId], references: [id], onDelete: Cascade)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+}
+
+model Booking {
+  id            String    @id @default(cuid())
+  date          DateTime
+  startTime     String
+  endTime       String
+  duration      Int
+  totalPrice    Float
+  status        String    @default("PENDING")
+  userId        String
+  user          User      @relation(fields: [userId], references: [id])
+  studioId      String
+  studio        Studio    @relation(fields: [studioId], references: [id])
+  notes         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  @@unique([studioId, date, startTime])
+}
