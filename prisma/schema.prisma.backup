@@ -4,65 +4,230 @@ generator client {
 
 datasource db {
   provider = "postgresql"
-  
+  url      = env("DATABASE_URL")
 }
 
+// ========================================
+// ÉNUMÉRATIONS
+// ========================================
+
+enum UserRole {
+  ADMIN
+  STUDIO_OWNER
+  ARTIST
+  TECHNICIAN
+  USER
+}
+
+enum EquipmentType {
+  MICROPHONE
+  MIXING_CONSOLE
+  AUDIO_INTERFACE
+  INSTRUMENT
+  AMPLIFIER
+  SPEAKER
+  HEADPHONES
+  SOFTWARE
+  ACCESSORY
+  OTHER
+}
+
+enum EquipmentStatus {
+  AVAILABLE
+  IN_USE
+  MAINTENANCE
+  OUT_OF_ORDER
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+  PAID
+}
+
+// ========================================
+// MODÈLES
+// ========================================
+
 model User {
-  id            String    @id @default(cuid())
-  email         String    @unique
+  id            String        @id @default(cuid())
+  email         String        @unique
   password      String
-  role          String    @default("USER")
-  name          String?
+  firstName     String?       @map("first_name")
+  lastName      String?       @map("last_name")
+  name          String?       // Pour la rétrocompatibilité
+  phone         String?
+  avatar        String?
+  role          UserRole      @default(USER)
+  isActive      Boolean       @default(true) @map("is_active")
+  emailVerified Boolean       @default(false) @map("email_verified")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  // Relations
   bookings      Booking[]
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  ownedStudios  Studio[]      @relation("StudioOwner")
+  notifications Notification[]
+
+  @@map("users")
+  @@index([email])
+  @@index([isActive])
 }
 
 model Studio {
-  id            String    @id @default(cuid())
+  id            String        @id @default(cuid())
   name          String
   description   String?
-  imageUrl      String?
-  pricePerHour  Float
-  maxCapacity   Int
-  openingHours  String
+  imageUrl      String?       @map("image_url")
+  address       String?
+  city          String?
+  postalCode    String?       @map("postal_code")
+  country       String?
+  pricePerHour  Float         @map("price_per_hour")
+  maxCapacity   Int           @map("max_capacity")
+  openingHours  String?       @map("opening_hours")
+  isActive      Boolean       @default(true) @map("is_active")
+  ownerId       String?       @map("owner_id")
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  owner         User?         @relation("StudioOwner", fields: [ownerId], references: [id], onDelete: SetNull)
   equipment     Equipment[]
   bookings      Booking[]
-  isActive      Boolean   @default(true)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  availability  StudioAvailability[]
+
+  @@map("studios")
+  @@index([ownerId])
+  @@index([isActive])
+  @@index([city, country])
+}
+
+model StudioAvailability {
+  id          String   @id @default(cuid())
+  studioId    String   @map("studio_id")
+  dayOfWeek   Int      @map("day_of_week") // 0 = Dimanche, 6 = Samedi
+  openingTime String   @map("opening_time") // Format: "HH:MM"
+  closingTime String   @map("closing_time") // Format: "HH:MM"
+  isAvailable Boolean  @default(true) @map("is_available")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // Relations
+  studio      Studio   @relation(fields: [studioId], references: [id], onDelete: Cascade)
+
+  @@unique([studioId, dayOfWeek])
+  @@map("studio_availabilities")
 }
 
 model Equipment {
-  id            String    @id @default(cuid())
+  id            String          @id @default(cuid())
   name          String
-  type          String
+  description   String?
+  type          EquipmentType
   brand         String?
   model         String?
-  isIncluded    Boolean   @default(true)
-  isAvailable   Boolean   @default(true)
-  status        String    @default("OK")
+  serialNumber  String?         @map("serial_number")
+  isIncluded    Boolean         @default(true) @map("is_included")
+  status        EquipmentStatus @default(AVAILABLE)
+  hourlyRate    Float?          @map("hourly_rate")
   studioId      String
-  studio        Studio    @relation(fields: [studioId], references: [id], onDelete: Cascade)
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  // Relations
+  studio        Studio          @relation(fields: [studioId], references: [id], onDelete: Cascade)
+  bookings      EquipmentBooking[]
+
+  @@map("equipment")
+  @@index([studioId])
+  @@index([type])
+  @@index([status])
 }
 
 model Booking {
-  id            String    @id @default(cuid())
+  id            String        @id @default(cuid())
   date          DateTime
-  startTime     String
-  endTime       String
+  startTime     String        @map("start_time") // Format: "HH:MM"
+  endTime       String        @map("end_time")   // Format: "HH:MM"
   duration      Int
-  totalPrice    Float
-  status        String    @default("PENDING")
-  userId        String
-  user          User      @relation(fields: [userId], references: [id])
-  studioId      String
-  studio        Studio    @relation(fields: [studioId], references: [id])
+  totalPrice    Float         @map("total_price")
+  status        BookingStatus @default(PENDING)
+  userId        String        @map("user_id")
+  studioId      String        @map("studio_id")
   notes         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  user          User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  studio        Studio        @relation(fields: [studioId], references: [id], onDelete: Cascade)
+  equipment     EquipmentBooking[]
+  payment       Payment?
 
   @@unique([studioId, date, startTime])
+  @@map("bookings")
+  @@index([userId])
+  @@index([studioId])
+  @@index([status])
+  @@index([date])
+}
+
+model EquipmentBooking {
+  id            String        @id @default(cuid())
+  bookingId     String        @map("booking_id")
+  equipmentId   String        @map("equipment_id")
+  quantity      Int           @default(1)
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  booking       Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  equipment     Equipment     @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId, equipmentId])
+  @@map("equipment_bookings")
+  @@index([bookingId])
+  @@index([equipmentId])
+}
+
+model Payment {
+  id              String        @id @default(cuid())
+  bookingId       String        @map("booking_id")
+  amount          Float
+  currency        String        @default("EUR")
+  status          String        @default("PENDING")
+  paymentMethod   String?       @map("payment_method")
+  stripePaymentId String?       @map("stripe_payment_id")
+  paidAt          DateTime?     @map("paid_at")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  // Relations
+  booking         Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@unique([bookingId])
+  @@map("payments")
+  @@index([bookingId])
+  @@index([status])
+}
+
+model Notification {
+  id        String   @id @default(cuid())
+  userId    String   @map("user_id")
+  type      String
+  title     String
+  message   String
+  isRead    Boolean  @default(false) @map("is_read")
+  data      Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // Relations
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notifications")
+  @@index([userId])
+  @@index([isRead])
 }

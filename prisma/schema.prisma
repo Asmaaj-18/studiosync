@@ -1,8 +1,3 @@
-// ========================================
-// SCHÉMA PRISMA - STUDIOYNC
-// ORM pour la gestion de studios musicaux
-// ========================================
-
 generator client {
   provider = "prisma-client-js"
 }
@@ -12,10 +7,239 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-// ========================================
-// ÉNUMÉRATIONS
-// ========================================
+/**
+ * ===================== USERS =====================
+ */
+model users {
+  id             String   @id @default(cuid())
+  email          String   @unique
+  password       String
+  first_name     String
+  last_name      String
+  phone          String?
+  avatar         String?
+  role           UserRole @default(ARTIST)
+  is_active      Boolean  @default(true)
+  email_verified Boolean  @default(false)
 
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  studios                  studios[]
+  reservations             reservations[]
+  equipment_bookings       equipment_bookings[]
+  reservation_participants reservation_participants[]
+  notifications            notifications[]
+  files                    files[]
+}
+
+/**
+ * ===================== STUDIOS =====================
+ */
+model studios {
+  id          String  @id @default(cuid())
+  name        String
+  description String?
+  address     String
+  city        String
+  postal_code String
+  country     String
+  capacity    Int
+  hourly_rate Decimal @db.Decimal(10, 2)
+  currency    String  @default("EUR")
+  is_active   Boolean @default(true)
+  owner_id    String
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  users                 users                   @relation(fields: [owner_id], references: [id], onDelete: Cascade)
+  equipment             equipment[]
+  reservations          reservations[]
+  projects              projects[]
+  studio_availabilities studio_availabilities[]
+
+  @@index([city, country])
+  @@index([owner_id])
+}
+
+/**
+ * ===================== EQUIPMENT =====================
+ */
+model equipment {
+  id          String          @id @default(cuid())
+  name        String
+  description String?
+  brand       String?
+  model       String?
+  type        EquipmentType
+  status      EquipmentStatus @default(AVAILABLE)
+  hourly_rate Decimal?        @db.Decimal(10, 2)
+  daily_rate  Decimal?        @db.Decimal(10, 2)
+  studio_id   String
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  studios            studios              @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+  equipment_bookings equipment_bookings[]
+}
+
+/**
+ * ===================== STUDIO AVAILABILITIES =====================
+ */
+model studio_availabilities {
+  id           String   @id @default(cuid())
+  studio_id    String
+  day_of_week  Int
+  opening_time DateTime @db.Time(6)
+  closing_time DateTime @db.Time(6)
+  is_available Boolean  @default(true)
+
+  studios studios @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+
+  @@unique([studio_id, day_of_week])
+}
+
+/**
+ * ===================== RESERVATIONS =====================
+ */
+model reservations {
+  id          String            @id @default(cuid())
+  title       String
+  description String?
+  start_time  DateTime          @db.Timestamptz(6)
+  end_time    DateTime          @db.Timestamptz(6)
+  status      ReservationStatus @default(PENDING)
+  total_price Decimal           @db.Decimal(10, 2)
+  currency    String            @default("EUR")
+  studio_id   String
+  created_by  String
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  studios                  studios                    @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+  users                    users                      @relation(fields: [created_by], references: [id], onDelete: Cascade)
+  reservation_participants reservation_participants[]
+  equipment_bookings       equipment_bookings[]
+  payments                 payments?
+  projects                 projects[] // ✅ relation OK maintenant
+}
+
+/**
+ * ===================== PARTICIPANTS =====================
+ */
+model reservation_participants {
+  id             String          @id @default(cuid())
+  reservation_id String
+  user_id        String
+  role           ParticipantRole @default(MUSICIAN)
+
+  reservations reservations @relation(fields: [reservation_id], references: [id], onDelete: Cascade)
+  users        users        @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([reservation_id, user_id])
+}
+
+/**
+ * ===================== EQUIPMENT BOOKINGS =====================
+ */
+model equipment_bookings {
+  id             String        @id @default(cuid())
+  reservation_id String
+  equipment_id   String
+  quantity       Int
+  start_time     DateTime      @db.Timestamptz(6)
+  end_time       DateTime      @db.Timestamptz(6)
+  status         BookingStatus @default(RESERVED)
+  user_id        String?
+
+  reservations reservations @relation(fields: [reservation_id], references: [id], onDelete: Cascade)
+  equipment    equipment    @relation(fields: [equipment_id], references: [id], onDelete: Cascade)
+  users        users?       @relation(fields: [user_id], references: [id], onDelete: Cascade)
+
+  @@unique([reservation_id, equipment_id])
+}
+
+/**
+ * ===================== PAYMENTS =====================
+ */
+model payments {
+  id             String        @id @default(cuid())
+  reservation_id String        @unique
+  amount         Decimal       @db.Decimal(10, 2)
+  currency       String        @default("EUR")
+  status         PaymentStatus @default(PENDING)
+  payment_method String?
+  paid_at        DateTime?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  reservations reservations @relation(fields: [reservation_id], references: [id], onDelete: Cascade)
+}
+
+/**
+ * ===================== PROJECTS =====================
+ */
+model projects {
+  id          String        @id @default(cuid())
+  name        String
+  description String?
+  status      ProjectStatus @default(RECORDING)
+
+  studio_id      String?
+  reservation_id String?
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  studios      studios?      @relation(fields: [studio_id], references: [id], onDelete: Cascade)
+  reservations reservations? @relation(fields: [reservation_id], references: [id], onDelete: SetNull)
+  files        files[]
+
+  @@index([studio_id])
+  @@index([reservation_id])
+}
+
+/**
+ * ===================== FILES =====================
+ */
+model files {
+  id          String   @id @default(cuid())
+  name        String
+  url         String
+  type        FileType
+  project_id  String
+  uploaded_by String
+
+  created_at DateTime @default(now())
+  updated_at DateTime @updatedAt
+
+  projects projects @relation(fields: [project_id], references: [id], onDelete: Cascade)
+  users    users    @relation(fields: [uploaded_by], references: [id], onDelete: Cascade)
+}
+
+/**
+ * ===================== NOTIFICATIONS =====================
+ */
+model notifications {
+  id      String           @id @default(cuid())
+  user_id String
+  type    NotificationType
+  title   String
+  message String
+  is_read Boolean          @default(false)
+
+  created_at DateTime @default(now())
+
+  users users @relation(fields: [user_id], references: [id], onDelete: Cascade)
+}
+
+/**
+ * ===================== ENUMS =====================
+ */
 enum UserRole {
   ADMIN
   STUDIO_OWNER
@@ -28,11 +252,6 @@ enum EquipmentType {
   MIXING_CONSOLE
   AUDIO_INTERFACE
   INSTRUMENT
-  AMPLIFIER
-  SPEAKER
-  HEADPHONES
-  SOFTWARE
-  ACCESSORY
 }
 
 enum EquipmentStatus {
@@ -42,27 +261,10 @@ enum EquipmentStatus {
   OUT_OF_ORDER
 }
 
-enum ReservationStatus {
-  PENDING
-  CONFIRMED
-  CANCELLED
-  COMPLETED
-  PAID
-}
-
-enum ParticipantRole {
-  PRODUCER
-  ENGINEER
-  MUSICIAN
-  VOCALIST
-  GUEST
-}
-
 enum BookingStatus {
   RESERVED
   IN_USE
   RETURNED
-  DAMAGED
 }
 
 enum PaymentStatus {
@@ -70,7 +272,19 @@ enum PaymentStatus {
   PROCESSING
   SUCCEEDED
   FAILED
-  REFUNDED
+}
+
+enum ReservationStatus {
+  PENDING
+  CONFIRMED
+  CANCELLED
+  COMPLETED
+}
+
+enum ParticipantRole {
+  PRODUCER
+  ENGINEER
+  MUSICIAN
 }
 
 enum ProjectStatus {
@@ -78,272 +292,15 @@ enum ProjectStatus {
   MIXING
   MASTERING
   COMPLETED
-  ARCHIVED
 }
 
 enum FileType {
   AUDIO
-  MIDI
-  PROJECT
   DOCUMENT
   IMAGE
-  VIDEO
 }
 
 enum NotificationType {
   RESERVATION_CONFIRMED
-  RESERVATION_CANCELLED
   PAYMENT_RECEIVED
-  EQUIPMENT_BOOKED
-  SYSTEM_UPDATE
-}
-
-// ========================================
-// MODÈLES PRINCIPAUX
-// ========================================
-
-model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  password      String
-  firstName     String   @map("first_name")
-  lastName      String   @map("last_name")
-  phone         String?
-  avatar        String?
-  role          UserRole @default(ARTIST)
-  isActive      Boolean  @default(true) @map("is_active")
-  emailVerified Boolean  @default(false) @map("email_verified")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  ownedStudios        Studio[]                 @relation("StudioOwner")
-  createdReservations Reservation[]            @relation("ReservationCreator")
-  participations      ReservationParticipant[]
-  uploadedFiles       File[]
-  notifications       Notification[]
-  equipmentBookings   EquipmentBooking[]
-
-  @@map("users")
-}
-
-model Studio {
-  id          String   @id @default(cuid())
-  name        String
-  description String?
-  address     String
-  city        String
-  postalCode  String   @map("postal_code")
-  country     String
-  capacity    Int
-  hourlyRate  Decimal  @map("hourly_rate") @db.Decimal(10, 2)
-  currency    String   @default("EUR")
-  isActive    Boolean  @default(true) @map("is_active")
-  ownerId     String   @map("owner_id")
-  createdAt   DateTime @default(now()) @map("created_at")
-  updatedAt   DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  owner        User                 @relation("StudioOwner", fields: [ownerId], references: [id], onDelete: Cascade)
-  equipment    Equipment[]
-  reservations Reservation[]
-  availability StudioAvailability[]
-  projects     Project[]            @relation("StudioProjects")
-
-  @@index([ownerId])
-  @@index([isActive])
-  @@index([city, country])
-  @@map("studios")
-}
-
-model Equipment {
-  id           String          @id @default(cuid())
-  name         String
-  description  String?
-  brand        String?
-  model        String?
-  serialNumber String?         @map("serial_number")
-  type         EquipmentType
-  status       EquipmentStatus @default(AVAILABLE)
-  dailyRate    Decimal?        @map("daily_rate") @db.Decimal(10, 2)
-  hourlyRate   Decimal?        @map("hourly_rate") @db.Decimal(10, 2)
-  studioId     String          @map("studio_id")
-  createdAt    DateTime        @default(now()) @map("created_at")
-  updatedAt    DateTime        @updatedAt @map("updated_at")
-
-  // Relations
-  studio   Studio             @relation(fields: [studioId], references: [id], onDelete: Cascade)
-  bookings EquipmentBooking[]
-
-  @@index([studioId])
-  @@index([type])
-  @@index([status])
-  @@map("equipment")
-}
-
-model Reservation {
-  id          String            @id @default(cuid())
-  title       String
-  description String?
-  startTime   DateTime          @map("start_time") @db.Timestamptz
-  endTime     DateTime          @map("end_time") @db.Timestamptz
-  status      ReservationStatus @default(PENDING)
-  totalPrice  Decimal           @map("total_price") @db.Decimal(10, 2)
-  currency    String            @default("EUR")
-  studioId    String            @map("studio_id")
-  createdBy   String            @map("created_by")
-  createdAt   DateTime          @default(now()) @map("created_at")
-  updatedAt   DateTime          @updatedAt @map("updated_at")
-
-  // Relations
-  studio       Studio                   @relation(fields: [studioId], references: [id], onDelete: Cascade)
-  creator      User                     @relation("ReservationCreator", fields: [createdBy], references: [id], onDelete: Cascade)
-  participants ReservationParticipant[]
-  equipment    EquipmentBooking[]
-  payment      Payment?
-  projects     Project[]                @relation("ReservationProjects")
-
-  @@unique([studioId, startTime, endTime])
-  @@index([studioId])
-  @@index([createdBy])
-  @@index([status])
-  @@index([startTime, endTime])
-  @@map("reservations")
-}
-
-model ReservationParticipant {
-  id            String          @id @default(cuid())
-  reservationId String          @map("reservation_id")
-  userId        String          @map("user_id")
-  role          ParticipantRole @default(MUSICIAN)
-  joinedAt      DateTime        @default(now()) @map("joined_at")
-
-  // Relations
-  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
-  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([reservationId, userId])
-  @@index([reservationId])
-  @@index([userId])
-  @@map("reservation_participants")
-}
-
-model EquipmentBooking {
-  id            String        @id @default(cuid())
-  reservationId String        @map("reservation_id")
-  equipmentId   String        @map("equipment_id")
-  quantity      Int
-  startTime     DateTime      @map("start_time") @db.Timestamptz
-  endTime       DateTime      @map("end_time") @db.Timestamptz
-  status        BookingStatus @default(RESERVED)
-  userId        String?       @map("user_id") // Optionnel si c'est nullable
-
-  // Relations
-  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
-  equipment   Equipment   @relation(fields: [equipmentId], references: [id], onDelete: Cascade)
-  user        User?       @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@unique([reservationId, equipmentId])
-  @@index([reservationId])
-  @@index([equipmentId])
-  @@map("equipment_bookings")
-}
-
-model Payment {
-  id                    String        @id @default(cuid())
-  reservationId         String        @unique @map("reservation_id")
-  stripePaymentIntentId String?       @unique @map("stripe_payment_intent_id")
-  amount                Decimal       @db.Decimal(10, 2)
-  currency              String        @default("EUR")
-  status                PaymentStatus @default(PENDING)
-  paymentMethod         String?       @map("payment_method")
-  paidAt                DateTime?     @map("paid_at") @db.Timestamptz
-  createdAt             DateTime      @default(now()) @map("created_at")
-  updatedAt             DateTime      @updatedAt @map("updated_at")
-
-  // Relations
-  reservation Reservation @relation(fields: [reservationId], references: [id], onDelete: Cascade)
-
-  @@index([stripePaymentIntentId])
-  @@index([status])
-  @@map("payments")
-}
-
-model Project {
-  id            String        @id @default(cuid())
-  name          String
-  description   String?
-  reservationId String?       @map("reservation_id")
-  studioId      String?       @map("studio_id")
-  status        ProjectStatus @default(RECORDING)
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
-
-  // Relations
-  reservation Reservation? @relation(fields: [reservationId], references: [id], onDelete: SetNull, name: "ReservationProjects")
-  studio      Studio?      @relation(fields: [studioId], references: [id], onDelete: Cascade, name: "StudioProjects")
-  files       File[]
-
-  @@index([reservationId])
-  @@index([studioId])
-  @@index([status])
-  @@map("projects")
-}
-
-model File {
-  id           String   @id @default(cuid())
-  name         String
-  originalName String   @map("original_name")
-  mimeType     String   @map("mime_type")
-  size         Int
-  path         String
-  url          String
-  type         FileType
-  projectId    String   @map("project_id")
-  uploadedBy   String   @map("uploaded_by")
-  createdAt    DateTime @default(now()) @map("created_at")
-  updatedAt    DateTime @updatedAt @map("updated_at")
-
-  // Relations
-  project  Project @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  uploader User    @relation(fields: [uploadedBy], references: [id], onDelete: Cascade)
-
-  @@index([projectId])
-  @@index([uploadedBy])
-  @@index([type])
-  @@map("files")
-}
-
-model StudioAvailability {
-  id          String   @id @default(cuid())
-  studioId    String   @map("studio_id")
-  dayOfWeek   Int      @map("day_of_week") // 0 = Dimanche, 6 = Samedi
-  openingTime DateTime @map("opening_time") @db.Time
-  closingTime DateTime @map("closing_time") @db.Time
-  isAvailable Boolean  @default(true) @map("is_available")
-
-  // Relations
-  studio Studio @relation(fields: [studioId], references: [id], onDelete: Cascade)
-
-  @@unique([studioId, dayOfWeek])
-  @@map("studio_availabilities")
-}
-
-model Notification {
-  id        String           @id @default(cuid())
-  userId    String           @map("user_id")
-  type      NotificationType
-  title     String
-  message   String
-  isRead    Boolean          @default(false) @map("is_read")
-  data      Json?
-  createdAt DateTime         @default(now()) @map("created_at")
-
-  // Relations
-  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
-
-  @@index([userId])
-  @@index([isRead])
-  @@index([type])
-  @@map("notifications")
 }
